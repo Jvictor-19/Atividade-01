@@ -4,71 +4,61 @@ operações de consulta não causam condição de corrida umas com as outras,
 entretanto, as inserções e remoções causam condição de corrida entre elas.
 */
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <pthread.h>
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
-typedef struct No {
-    int valor;
-    struct No* prox;
-} No;
+public class ThreadSafeArrayList<T> {
+    private final List<T> list = new ArrayList<>();
+    private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
 
-typedef struct {
-    No* cabeca;
-    pthread_mutex_t mutex;
-} Lista;
-
-// Inicializa a lista
-void inicializar(Lista* lista) {
-    lista->cabeca = NULL;
-    pthread_mutex_init(&lista->mutex, NULL);
-}
-
-// Insere um valor na frente da lista
-void inserir(Lista* lista, int valor) {
-    pthread_mutex_lock(&lista->mutex);
-    No* novo = (No*) malloc(sizeof(No));
-    novo->valor = valor;
-    novo->prox = lista->cabeca;
-    lista->cabeca = novo;
-    pthread_mutex_unlock(&lista->mutex);
-}
-
-// Remove o primeiro valor (se existir)
-void remover(Lista* lista) {
-    pthread_mutex_lock(&lista->mutex);
-    if (lista->cabeca != NULL) {
-        No* temp = lista->cabeca;
-        lista->cabeca = lista->cabeca->prox;
-        free(temp);
-    }
-    pthread_mutex_unlock(&lista->mutex);
-}
-
-// Busca um valor na lista
-int buscar(Lista* lista, int valor) {
-    pthread_mutex_lock(&lista->mutex);
-    No* atual = lista->cabeca;
-    while (atual != NULL) {
-        if (atual->valor == valor) {
-            pthread_mutex_unlock(&lista->mutex);
-            return 1; // Encontrado
+    // Adiciona um elemento com trava de escrita
+    public void add(T element) {
+        lock.writeLock().lock();
+        try {
+            list.add(element);
+        } finally {
+            lock.writeLock().unlock();
         }
-        atual = atual->prox;
     }
-    pthread_mutex_unlock(&lista->mutex);
-    return 0; // Não encontrado
-}
 
-// Libera memória
-void destruir(Lista* lista) {
-    pthread_mutex_lock(&lista->mutex);
-    No* atual = lista->cabeca;
-    while (atual != NULL) {
-        No* temp = atual;
-        atual = atual->prox;
-        free(temp);
+    // Remove um elemento com trava de escrita
+    public void remove(T element) {
+        lock.writeLock().lock();
+        try {
+            list.remove(element);
+        } finally {
+            lock.writeLock().unlock();
+        }
     }
-    pthread_mutex_unlock(&lista->mutex);
-    pthread_mutex_destroy(&lista->mutex);
+
+    // Consulta segura com trava de leitura
+    public T get(int index) {
+        lock.readLock().lock();
+        try {
+            return list.get(index);
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    // Tamanho da lista (leitura)
+    public int size() {
+        lock.readLock().lock();
+        try {
+            return list.size();
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    // Verifica se contém um elemento (leitura)
+    public boolean contains(T element) {
+        lock.readLock().lock();
+        try {
+            return list.contains(element);
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
 }
