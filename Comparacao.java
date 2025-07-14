@@ -13,149 +13,211 @@ remoção com valores aleatórios
 ▸Informe os valores obtidos nos testes realizados
 */
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <pthread.h>
-#include <unistd.h>
-#include <sys/time.h>
+import java.util.*;
+import java.util.concurrent.*;
 
-#define TOTAL_OPERACOES 100000
-#define NUM_THREADS 16
-#define THREAD_SAFE 1  // coloque 0 para testar lista não thread-safe
+public class Comparacao {
+    public static void main(String[] args) throws InterruptedException {
+        int[] sizes = {10_000, 50_000, 100_000};
 
-// ---------- Estrutura da lista ligada ----------
-typedef struct No {
-    int valor;
-    struct No* prox;
-} No;
+        System.out.println("==== CENÁRIO 1: SINGLE THREAD ====");
+        for (int size : sizes) {
+            System.out.println("\nTamanho da lista: " + size);
 
-typedef struct {
-    No* cabeca;
-    pthread_mutex_t mutex;
-} Lista;
+            System.out.println("ArrayList:");
+            testSingleThreadList(new ArrayList<>(), size);
 
-void inicializar(Lista* lista) {
-    lista->cabeca = NULL;
-    pthread_mutex_init(&lista->mutex, NULL);
-}
-
-void inserir(Lista* lista, int valor) {
-#if THREAD_SAFE
-    pthread_mutex_lock(&lista->mutex);
-#endif
-    No* novo = (No*) malloc(sizeof(No));
-    novo->valor = valor;
-    novo->prox = lista->cabeca;
-    lista->cabeca = novo;
-#if THREAD_SAFE
-    pthread_mutex_unlock(&lista->mutex);
-#endif
-}
-
-int buscar(Lista* lista, int valor) {
-#if THREAD_SAFE
-    pthread_mutex_lock(&lista->mutex);
-#endif
-    No* atual = lista->cabeca;
-    while (atual != NULL) {
-        if (atual->valor == valor) {
-#if THREAD_SAFE
-            pthread_mutex_unlock(&lista->mutex);
-#endif
-            return 1;
+            System.out.println("ThreadSafeArrayList:");
+            testSingleThreadCustom(new ThreadSafeArrayList<>(), size);
         }
-        atual = atual->prox;
-    }
-#if THREAD_SAFE
-    pthread_mutex_unlock(&lista->mutex);
-#endif
-    return 0;
-}
 
-void remover(Lista* lista) {
-#if THREAD_SAFE
-    pthread_mutex_lock(&lista->mutex);
-#endif
-    if (lista->cabeca != NULL) {
-        No* temp = lista->cabeca;
-        lista->cabeca = lista->cabeca->prox;
-        free(temp);
-    }
-#if THREAD_SAFE
-    pthread_mutex_unlock(&lista->mutex);
-#endif
-}
+        System.out.println("\n==== CENÁRIO 2: MULTI THREAD (16 threads) ====");
+        int numThreads = 16;
+        int opsPerThread = 10_000;
 
-void destruir(Lista* lista) {
-    No* atual = lista->cabeca;
-    while (atual != NULL) {
-        No* temp = atual;
-        atual = atual->prox;
-        free(temp);
-    }
-    pthread_mutex_destroy(&lista->mutex);
-}
+        System.out.println("\nThreadSafeArrayList:");
+        testMultiThreadCustom(new ThreadSafeArrayList<>(), numThreads, opsPerThread);
 
-// ---------- Medição de tempo ----------
-double tempo_agora() {
-    struct timeval t;
-    gettimeofday(&t, NULL);
-    return t.tv_sec + t.tv_usec / 1e6;
-}
-
-// ---------- Função executada por cada thread ----------
-typedef struct {
-    Lista* lista;
-    int operacoes_por_thread;
-} ArgumentoThread;
-
-void* operacoes(void* arg) {
-    ArgumentoThread* args = (ArgumentoThread*) arg;
-    Lista* lista = args->lista;
-    int n = args->operacoes_por_thread;
-
-    for (int i = 0; i < n; i++) {
-        int v = rand() % 1000;
-        inserir(lista, v);
-        buscar(lista, v);
-        remover(lista);
-    }
-    return NULL;
-}
-
-// ---------- Função principal ----------
-int main() {
-    srand(time(NULL));
-    Lista lista;
-    inicializar(&lista);
-
-    pthread_t threads[NUM_THREADS];
-    ArgumentoThread args[NUM_THREADS];
-    int ops_por_thread = TOTAL_OPERACOES / NUM_THREADS;
-
-    double inicio = tempo_agora();
-
-    for (int i = 0; i < NUM_THREADS; i++) {
-        args[i].lista = &lista;
-        args[i].operacoes_por_thread = ops_por_thread;
-        pthread_create(&threads[i], NULL, operacoes, &args[i]);
+        System.out.println("\nVector:");
+        testMultiThreadList(new Vector<>(), numThreads, opsPerThread);
     }
 
-    for (int i = 0; i < NUM_THREADS; i++) {
-        pthread_join(threads[i], NULL);
+    /**
+     * Teste single thread para classes que estendem List (ArrayList, Vector)
+     */
+    private static void testSingleThreadList(List<Integer> list, int numOperations) {
+        Random rand = new Random();
+
+        // Inserção
+        long start = System.nanoTime();
+        for (int i = 0; i < numOperations; i++) {
+            list.add(rand.nextInt());
+        }
+        long end = System.nanoTime();
+        print("Inserção", numOperations, start, end);
+
+        // Busca
+        start = System.nanoTime();
+        for (int i = 0; i < numOperations; i++) {
+            list.get(rand.nextInt(list.size()));
+        }
+        end = System.nanoTime();
+        print("Busca", numOperations, start, end);
+
+        // Remoção
+        start = System.nanoTime();
+        for (int i = 0; i < numOperations; i++) {
+            list.remove(list.size() - 1);
+        }
+        end = System.nanoTime();
+        print("Remoção", numOperations, start, end);
     }
 
-    double fim = tempo_agora();
+    /**
+     * Teste single thread para ThreadSafeArrayList
+     */
+    private static void testSingleThreadCustom(ThreadSafeArrayList<Integer> list, int numOperations) {
+        Random rand = new Random();
 
-    double tempo_total = fim - inicio;
-    int total_ops = TOTAL_OPERACOES * 3; // inserção + busca + remoção
-    double ops_por_segundo = total_ops / tempo_total;
+        // Inserção
+        long start = System.nanoTime();
+        for (int i = 0; i < numOperations; i++) {
+            list.add(rand.nextInt());
+        }
+        long end = System.nanoTime();
+        print("Inserção", numOperations, start, end);
 
-    printf("🔧 Modo: %s\n", THREAD_SAFE ? "Thread-Safe" : "Não Thread-Safe");
-    printf("🧵 Threads: %d\n", NUM_THREADS);
-    printf("⏱️ Tempo total: %.4f segundos\n", tempo_total);
-    printf("⚙️ Operações por segundo: %.2f\n", ops_por_segundo);
+        // Busca
+        start = System.nanoTime();
+        for (int i = 0; i < numOperations; i++) {
+            list.get(rand.nextInt(list.size()));
+        }
+        end = System.nanoTime();
+        print("Busca", numOperations, start, end);
 
-    destruir(&lista);
-    return 0;
+        // Remoção
+        start = System.nanoTime();
+        for (int i = 0; i < numOperations; i++) {
+            list.remove(list.size() - 1);
+        }
+        end = System.nanoTime();
+        print("Remoção", numOperations, start, end);
+    }
+
+    /**
+     * Teste multi thread para classes que implementam List (Vector)
+     */
+    private static void testMultiThreadList(List<Integer> list, int numThreads, int opsPerThread) throws InterruptedException {
+        ExecutorService executor = Executors.newFixedThreadPool(numThreads);
+        Random rand = new Random();
+
+        // Inserção
+        long start = System.nanoTime();
+        for (int i = 0; i < numThreads; i++) {
+            executor.submit(() -> {
+                for (int j = 0; j < opsPerThread; j++) {
+                    list.add(rand.nextInt());
+                }
+            });
+        }
+        executor.shutdown();
+        executor.awaitTermination(5, TimeUnit.MINUTES);
+        long end = System.nanoTime();
+        print("Inserção", numThreads * opsPerThread, start, end);
+
+        // Busca
+        executor = Executors.newFixedThreadPool(numThreads);
+        start = System.nanoTime();
+        for (int i = 0; i < numThreads; i++) {
+            executor.submit(() -> {
+                for (int j = 0; j < opsPerThread; j++) {
+                    list.get(rand.nextInt(list.size()));
+                }
+            });
+        }
+        executor.shutdown();
+        executor.awaitTermination(5, TimeUnit.MINUTES);
+        end = System.nanoTime();
+        print("Busca", numThreads * opsPerThread, start, end);
+
+        // Remoção
+        executor = Executors.newFixedThreadPool(numThreads);
+        start = System.nanoTime();
+        for (int i = 0; i < numThreads; i++) {
+            executor.submit(() -> {
+                synchronized (list) {
+                    for (int j = 0; j < opsPerThread; j++) {
+                        if (list.size() > 0)
+                            list.remove(list.size() - 1);
+                    }
+                }
+            });
+        }
+        executor.shutdown();
+        executor.awaitTermination(5, TimeUnit.MINUTES);
+        end = System.nanoTime();
+        print("Remoção", numThreads * opsPerThread, start, end);
+    }
+
+    /**
+     * Teste multi thread para ThreadSafeArrayList
+     */
+    private static void testMultiThreadCustom(ThreadSafeArrayList<Integer> list, int numThreads, int opsPerThread) throws InterruptedException {
+        ExecutorService executor = Executors.newFixedThreadPool(numThreads);
+        Random rand = new Random();
+
+        // Inserção
+        long start = System.nanoTime();
+        for (int i = 0; i < numThreads; i++) {
+            executor.submit(() -> {
+                for (int j = 0; j < opsPerThread; j++) {
+                    list.add(rand.nextInt());
+                }
+            });
+        }
+        executor.shutdown();
+        executor.awaitTermination(5, TimeUnit.MINUTES);
+        long end = System.nanoTime();
+        print("Inserção", numThreads * opsPerThread, start, end);
+
+        // Busca
+        executor = Executors.newFixedThreadPool(numThreads);
+        start = System.nanoTime();
+        for (int i = 0; i < numThreads; i++) {
+            executor.submit(() -> {
+                for (int j = 0; j < opsPerThread; j++) {
+                    list.get(rand.nextInt(list.size()));
+                }
+            });
+        }
+        executor.shutdown();
+        executor.awaitTermination(5, TimeUnit.MINUTES);
+        end = System.nanoTime();
+        print("Busca", numThreads * opsPerThread, start, end);
+
+        // Remoção
+        executor = Executors.newFixedThreadPool(numThreads);
+        start = System.nanoTime();
+        for (int i = 0; i < numThreads; i++) {
+            executor.submit(() -> {
+                for (int j = 0; j < opsPerThread; j++) {
+                    if (list.size() > 0)
+                        list.remove(list.size() - 1);
+                }
+            });
+        }
+        executor.shutdown();
+        executor.awaitTermination(5, TimeUnit.MINUTES);
+        end = System.nanoTime();
+        print("Remoção", numThreads * opsPerThread, start, end);
+    }
+
+    /**
+     * Imprime resultados formatados.
+     */
+    private static void print(String op, int ops, long start, long end) {
+        double time = (end - start) / 1_000_000_000.0;
+        double opsPerSec = ops / time;
+        System.out.printf("%s: %.3f s, ops/s: %.0f\n", op, time, opsPerSec);
+    }
 }
